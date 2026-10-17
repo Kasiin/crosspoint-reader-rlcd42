@@ -23,6 +23,7 @@ parser.add_argument("--additional-intervals", dest="additional_intervals", actio
 parser.add_argument("--compress", dest="compress", action="store_true", help="Compress glyph bitmaps using DEFLATE with group-based compression.")
 parser.add_argument("--zopfli", dest="zopfli", action="store_true", help="Use Zopfli for the DEFLATE backend instead of zlib. Produces standard raw-DEFLATE streams (decoded unchanged by the on-device uzlib inflater), typically a few percent smaller than zlib -9, at the cost of much slower compression. Requires --compress and the 'zopfli' package.")
 parser.add_argument("--force-autohint", dest="force_autohint", action="store_true", help="Force FreeType auto-hinter instead of native font hinting. Improves stem width consistency for fonts with weak or no native TrueType hints.")
+parser.add_argument("--dpi", dest="dpi", type=int, default=150, help="rasterization DPI (default 150). Pixel fonts need --dpi 72 so 'size' maps 1:1 to pixels (ppem == size).")
 parser.add_argument("--pnum", dest="pnum", action="store_true", help="Use proportional numerals (pnum OpenType feature) instead of default tabular figures. Reduces visual gaps between digits in running prose.")
 args = parser.parse_args()
 
@@ -294,7 +295,7 @@ for i_start, i_end in unvalidated_intervals:
         intervals.append((start, i_end))
 
 for face in font_stack:
-    face.set_char_size(size << 6, size << 6, 150, 150)
+    face.set_char_size(size << 6, size << 6, args.dpi, args.dpi)
 
 total_size = 0
 all_glyphs = []
@@ -528,9 +529,9 @@ def extract_kerning_fonttools(font_path, codepoints, ppem, pnum_subs=None):
     return result
 
 # The ppem used by the existing glyph rasterization:
-#   face.set_char_size(size << 6, size << 6, 150, 150)
-# means size_pt at 150 DPI -> ppem = size * 150 / 72
-ppem = size * 150.0 / 72.0
+#   face.set_char_size(size << 6, size << 6, args.dpi, args.dpi)
+# means size_pt at DPI -> ppem = size * dpi / 72
+ppem = size * args.dpi / 72.0
 
 kern_map = {}  # (leftCp, rightCp) -> adjust
 for face_idx, cps in face_idx_cps.items():

@@ -11,6 +11,9 @@
 #include <memory>
 
 #include "MappedInputManager.h"
+#if FREEINK_DEVICE_RLCD42
+#include "RlcdLayout.h"
+#endif
 #include "RecentBooksStore.h"
 #include "components/CoverGridHomeUi.h"
 #include "components/themes/BaseTheme.h"
@@ -78,6 +81,9 @@ const ThemeMetrics& UITheme::getMetrics() const {
   const bool touch = gpio.hasTouch();
   if (!metricsValid || touch != metricsForTouch) {
     adjustedMetrics = *currentMetrics;
+#if FREEINK_DEVICE_RLCD42
+    applyRlcdLayout(adjustedMetrics);
+#endif
     if (touch) {
       adjustedMetrics.buttonHintsHeight = 0;
     }

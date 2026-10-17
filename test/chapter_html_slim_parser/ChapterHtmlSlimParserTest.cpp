@@ -117,7 +117,7 @@ TEST_F(ChapterHtmlSlimParserTest, UnequalTableCellsAndRubySurvivePageBreaks) {
 }
 
 TEST_F(ChapterHtmlSlimParserTest, PageImageDeserializeRejectsMissingImageBlock) {
-  const auto path = std::filesystem::temp_directory_path() / "crosspoint-missing-image-cache.bin";
+  const auto path = (std::filesystem::temp_directory_path() / "crosspoint-missing-image-cache.bin").string();
   {
     HalFile output;
     ASSERT_TRUE(output.open(path.c_str(), "wb"));

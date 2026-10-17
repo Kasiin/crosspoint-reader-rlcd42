@@ -43,5 +43,10 @@ inline freeink::ui::ThemeTokens uiThemeTokens(const freeink::ui::GfxRendererTarg
   tokens.sheetRadius = static_cast<uint8_t>(metrics.sheetRadius);
   tokens.capsuleRadius = static_cast<uint8_t>(metrics.capsuleRadius);
   tokens.bodyText.bold = metrics.listTitleBold;
+#if FREEINK_DEVICE_RLCD42
+  tokens.minTouchSize = 32;
+  tokens.listMinRowHeight = static_cast<int16_t>(metrics.listRowHeight);
+  tokens.footerHeight = 32;
+#endif
   return tokens;
 }

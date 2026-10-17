@@ -205,6 +205,16 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
     }
   }
 
+#if FREEINK_DEVICE_RLCD42
+  // Early RLCD42 builds defaulted both page gestures to swipe-only before tap
+  // zones were enabled on this board; upgrade those saves to tap-and-swipe.
+  if (pageTurnGesture == SWIPE_ONLY && previousPageGesture == SWIPE_ONLY) {
+    pageTurnGesture = TAP_AND_SWIPE;
+    previousPageGesture = TAP_AND_SWIPE;
+    needsResave = true;
+  }
+#endif
+
   if (doc["sleepTimeoutMinutes"].isNull() && !doc["sleepTimeout"].isNull()) {
     const uint8_t legacyValue =
         clamp(doc["sleepTimeout"] | (uint8_t)SLEEP_10_MIN, SLEEP_TIMEOUT_COUNT, (uint8_t)SLEEP_10_MIN);
@@ -254,6 +264,14 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   const char* sfn = doc["sdFontFamilyName"] | "";
   strncpy(sdFontFamilyName, sfn, sizeof(sdFontFamilyName) - 1);
   sdFontFamilyName[sizeof(sdFontFamilyName) - 1] = '\0';
+#if FREEINK_DEVICE_RLCD42
+  // Value 2 is FUSION_PIXEL on this board, not the legacy OpenDyslexic slot —
+  // the RLCD42 port never shipped a build using that slot, so the migration
+  // below would only destroy a valid Fusion Pixel selection here.
+  if (storedFontFamily >= BUILTIN_FONT_COUNT) {
+    needsResave = true;
+  }
+#else
   if (storedFontFamily == LEGACY_OPENDYSLEXIC && sdFontFamilyName[0] == '\0') {
     fontFamily = NOTOSERIF;
     strncpy(sdFontFamilyName, "OpenDyslexic", sizeof(sdFontFamilyName) - 1);
@@ -262,6 +280,7 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   } else if (storedFontFamily >= BUILTIN_FONT_COUNT) {
     needsResave = true;
   }
+#endif
   // Dictionary folder name — uses dynamic getter/setter in SettingsList, load manually
   copyToField(dictionaryName, doc["dictionaryName"] | "", sizeof(dictionaryName));
   // Language -- stored as code string for stability across enum reorders.
@@ -297,6 +316,7 @@ CrossPointSettings::StatusBarSpec CrossPointSettings::statusBarSpec() const {
   spec.progressBarHeightPx =
       statusBarProgressBar != HIDE_PROGRESS ? static_cast<uint8_t>((statusBarProgressBarThickness + 1) * 2) : 0;
   spec.xtcMode = xtcStatusBarMode;
+  spec.position = statusBarPosition;
   return spec;
 }
 
@@ -410,6 +430,12 @@ int CrossPointSettings::getReaderFontId() const {
     // Fall through to built-in if SD font not found
   }
 
+#if FREEINK_DEVICE_RLCD42
+  // The other built-in families are Latin-only and render every CJK page as
+  // .notdef boxes, so the reader always uses the single-size CJK family here
+  // (12px regardless of the requested point size). SD fonts stay selectable.
+  return FUSION_PIXEL_12_FONT_ID;
+#endif
   // A built-in family only exists at BUILTIN_READER_POINT_SIZES, so a size
   // carried over from an SD family may not be one of them. ensureLoaded()
   // normally persists the snap; snap again here (without allocating — this runs

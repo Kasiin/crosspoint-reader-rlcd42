@@ -169,8 +169,12 @@ void UiTabListActivity::buildTabBar(UiScreen& screen) {
     tabStyles.selected.foreground = fui::Paint::solid(fui::Color::White);
     tabStyles.selected.radius = screen.theme().listRowRadius;
   } else {
-    tabStyles.selected.background = fui::Paint::dither(fui::Color::LightGray);
-    tabStyles.selected.foreground = fui::Paint::solid(fui::Color::Black);
+    // 1-bit panels keep the unfocused selected tab solid; dither shows as
+    // checkerboard there.
+    tabStyles.selected.background =
+        metrics.ditheredSelection ? fui::Paint::dither(fui::Color::LightGray) : fui::Paint::solid(fui::Color::Black);
+    tabStyles.selected.foreground =
+        metrics.ditheredSelection ? fui::Paint::solid(fui::Color::Black) : fui::Paint::solid(fui::Color::White);
     tabProps.selectedUnderline = 2;
   }
   // Focus/flash states keep the pill instead of falling back to an unset
@@ -185,7 +189,7 @@ void UiTabListActivity::buildTabBar(UiScreen& screen) {
   const fui::Rect tabRect{frameRect.x, contentTabRect.y, frameRect.width, contentTabRect.height};
   // Focused band wash is the Lyra treatment; legacy RoundedRaff keeps the
   // band plain in both states.
-  if (tabsFocused && !metrics.tabPillFullSlot) {
+  if (tabsFocused && !metrics.tabPillFullSlot && metrics.ditheredSelection) {
     screen.target().fill(tabRect, fui::Paint::dither(fui::Color::LightGray));
   }
   // The band chrome (wash, divider) spans the full screen width, but the tab

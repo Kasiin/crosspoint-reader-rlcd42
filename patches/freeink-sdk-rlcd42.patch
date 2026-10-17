@@ -1,0 +1,539 @@
+diff --git a/libs/display/FreeInkDisplay/include/FreeInkDisplay.h b/libs/display/FreeInkDisplay/include/FreeInkDisplay.h
+index 0acc38a..29d6005 100644
+--- a/libs/display/FreeInkDisplay/include/FreeInkDisplay.h
++++ b/libs/display/FreeInkDisplay/include/FreeInkDisplay.h
+@@ -76,8 +76,13 @@ class FreeInkDisplay {
+   void begin();
+ 
+   // Legacy compile-time dimensions kept for compatibility.
++#if FREEINK_DEVICE_RLCD42
++  static constexpr uint16_t DISPLAY_WIDTH = 400;
++  static constexpr uint16_t DISPLAY_HEIGHT = 300;
++#else
+   static constexpr uint16_t DISPLAY_WIDTH = 800;
+   static constexpr uint16_t DISPLAY_HEIGHT = 480;
++#endif
+   static constexpr uint16_t DISPLAY_WIDTH_BYTES = DISPLAY_WIDTH / 8;
+   static constexpr uint32_t BUFFER_SIZE = DISPLAY_WIDTH_BYTES * DISPLAY_HEIGHT;
+   static constexpr uint16_t X3_DISPLAY_WIDTH = 792;
+diff --git a/libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp b/libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp
+index aee6513..d83520b 100644
+--- a/libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp
++++ b/libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp
+@@ -18,6 +18,9 @@
+ #endif
+ 
+ #include "driver/PanelDriver.h"
++#if FREEINK_DRIVER_ST7305
++#include "driver/St7305Driver.h"
++#endif
+ 
+ // Which panel drivers link is derived from the device set (-DFREEINK_DEVICE_*)
+ // in BoardConfig.h, included above, which defines each FREEINK_DRIVER_* to 0/1.
+@@ -219,7 +222,9 @@ void FreeInkDisplay::selectDriver() {
+         break;
+       }
+ #endif
+-#if FREEINK_DRIVER_UC8279C
++#if FREEINK_DRIVER_ST7305
++      _driver = &st7305Driver();
++#elif FREEINK_DRIVER_UC8279C
+       _driver = &uc8279cA4Driver();
+ #elif FREEINK_DRIVER_SSD1677
+       _driver = &ssd1677Driver();
+diff --git a/libs/display/FreeInkDisplay/src/bus/EpdBus.cpp b/libs/display/FreeInkDisplay/src/bus/EpdBus.cpp
+index 8119a59..7d8d888 100644
+--- a/libs/display/FreeInkDisplay/src/bus/EpdBus.cpp
++++ b/libs/display/FreeInkDisplay/src/bus/EpdBus.cpp
+@@ -190,7 +190,7 @@ void EpdBus::begin(const EpdPins& pins, uint32_t spiHz, BusyPolarity busy, int8_
+     gpio_hold_dis(static_cast<gpio_num_t>(pins.rst));
+     pinMode(pins.rst, OUTPUT);
+   }
+-  pinMode(pins.busy, busy == BusyPolarity::ActiveLow ? INPUT_PULLUP : INPUT);
++  if (pins.busy >= 0) pinMode(pins.busy, busy == BusyPolarity::ActiveLow ? INPUT_PULLUP : INPUT);
+   if (_coCs >= 0) {
+     pinMode(_coCs, OUTPUT);
+     digitalWrite(_coCs, HIGH);
+diff --git a/libs/display/FreeInkDisplay/src/driver/St7305Driver.cpp b/libs/display/FreeInkDisplay/src/driver/St7305Driver.cpp
+new file mode 100644
+index 0000000..3d783e4
+--- /dev/null
++++ b/libs/display/FreeInkDisplay/src/driver/St7305Driver.cpp
+@@ -0,0 +1,110 @@
++// SPDX-License-Identifier: GPL-2.0-only
++// Initialization and RAM mapping adapted from LinIT-L/ESP32-S3-RLCD-BBK
++// components/st7305/st7305.c, revision 1c0549206f128c311103f374ee46c38b95229c91.
++#include <BoardConfig.h>
++
++#if FREEINK_DRIVER_ST7305
++#include <cstring>
++#include <initializer_list>
++
++#include "St7305Driver.h"
++#include "St7305Packing.h"
++
++namespace freeink {
++namespace {
++void command(EpdBus& bus, uint8_t cmd, std::initializer_list<uint8_t> values = {}) {
++  auto txn = bus.beginTxn();
++  txn.cmd(cmd);
++  for (const auto value : values) txn.data(value);
++}
++
++class St7305Driver final : public PanelDriver {
++ public:
++  uint32_t spiHz() const override { return BoardConfig::ACTIVE.displaySpiHz; }
++  BusyPolarity busyPolarity() const override { return BusyPolarity::ActiveHigh; }
++  PanelGeometry geometry() const override { return {400, 300, 50, 15000}; }
++
++  void begin(EpdBus& bus) override {
++    // Match the existing board's validated reset and register sequence.
++    const auto rst = BoardConfig::ACTIVE.display.rst;
++    digitalWrite(rst, HIGH);
++    delay(50);
++    digitalWrite(rst, LOW);
++    delay(20);
++    digitalWrite(rst, HIGH);
++    delay(50);
++    command(bus, 0xD6, {0x17, 0x02});
++    command(bus, 0xD1, {0x01});
++    command(bus, 0xC0, {0x11, 0x04});
++    command(bus, 0xC1, {0x69, 0x69, 0x69, 0x69});
++    command(bus, 0xC2, {0x19, 0x19, 0x19, 0x19});
++    command(bus, 0xC4, {0x4B, 0x4B, 0x4B, 0x4B});
++    command(bus, 0xC5, {0x19, 0x19, 0x19, 0x19});
++    command(bus, 0xD8, {0x80, 0xE9});
++    command(bus, 0xB2, {0x02});
++    command(bus, 0xB3, {0xE5, 0xF6, 0x05, 0x46, 0x77, 0x77, 0x77, 0x77, 0x76, 0x45});
++    command(bus, 0xB4, {0x05, 0x46, 0x77, 0x77, 0x77, 0x77, 0x76, 0x45});
++    command(bus, 0x62, {0x32, 0x03, 0x1F});
++    command(bus, 0xB7, {0x13});
++    command(bus, 0xB0, {0x64});
++    command(bus, 0x11);
++    delay(200);
++    command(bus, 0xC9, {0x00});
++    command(bus, 0x36, {0x48});
++    command(bus, 0x3A, {0x11});
++    command(bus, 0xB9, {0x20});
++    command(bus, 0xB8, {0x29});
++    command(bus, 0x21);
++    command(bus, 0x2A, {0x12, 0x2A});
++    command(bus, 0x2B, {0x00, 0xC7});
++    command(bus, 0x35, {0x00});
++    command(bus, 0xD0, {0xFF});
++    command(bus, 0x38);
++    command(bus, 0x29);
++    // Unlike e-paper this panel shows RAM live; push one white frame so boot
++    // noise is not visible until the firmware's first paint. The address
++    // window was already set above.
++    {
++      auto txn = bus.beginTxn();
++      txn.cmd(0x2C);
++      uint8_t white[75];
++      memset(white, 0xFF, sizeof(white));
++      for (int pair = 0; pair < 200; ++pair) txn.writeBytes(white, sizeof(white));
++    }
++  }
++
++  void deepSleep(EpdBus& bus) override {
++    command(bus, 0x28);
++    command(bus, 0x10);
++    delay(120);
++  }
++
++  void display(EpdBus& bus, const uint8_t* fb, const uint8_t*, RefreshMode, bool) override {
++    if (!fb) return;
++    // Refresh mode and turnOff are EPD hints: the LCD must remain powered to display.
++    command(bus, 0x36, {0x48});
++    command(bus, 0x2A, {0x12, 0x2A});
++    command(bus, 0x2B, {0x00, 0xC7});
++    auto txn = bus.beginTxn();
++    txn.cmd(0x2C);
++    uint8_t column[75];
++    for (int pair = 0; pair < 200; ++pair) {
++      for (int group = 0; group < 75; ++group) column[group] = st7305PackedByte(fb, pair, group);
++      txn.writeBytes(column, sizeof(column));
++    }
++  }
++
++  // The panel is monochrome: when the reader's grayscale pass ends, the BW
++  // base frame is already on screen and the framebuffer holds an MSB gray
++  // plane whose polarity this panel would show as a black frame. Keep the
++  // base by not re-displaying anything.
++  void displayGray(EpdBus&, const uint8_t*, bool, const unsigned char*, bool) override {}
++};
++}  // namespace
++
++PanelDriver& st7305Driver() {
++  static St7305Driver driver;
++  return driver;
++}
++}  // namespace freeink
++#endif
+diff --git a/libs/display/FreeInkDisplay/src/driver/St7305Driver.h b/libs/display/FreeInkDisplay/src/driver/St7305Driver.h
+new file mode 100644
+index 0000000..736026d
+--- /dev/null
++++ b/libs/display/FreeInkDisplay/src/driver/St7305Driver.h
+@@ -0,0 +1,7 @@
++// SPDX-License-Identifier: GPL-2.0-only
++#pragma once
++#include "PanelDriver.h"
++
++namespace freeink {
++PanelDriver& st7305Driver();
++}  // namespace freeink
+diff --git a/libs/display/FreeInkDisplay/src/driver/St7305Packing.h b/libs/display/FreeInkDisplay/src/driver/St7305Packing.h
+new file mode 100644
+index 0000000..5c56831
+--- /dev/null
++++ b/libs/display/FreeInkDisplay/src/driver/St7305Packing.h
+@@ -0,0 +1,19 @@
++// SPDX-License-Identifier: GPL-2.0-only
++#pragma once
++#include <cstdint>
++
++namespace freeink {
++// ST7305 RAM stores two columns by four vertically reversed rows per byte.
++inline uint8_t st7305PackedByte(const uint8_t* frame, const int columnPair, const int rowGroup) {
++  uint8_t packed = 0;
++  for (int row = 0; row < 4; ++row) {
++    const int y = 299 - (rowGroup * 4 + row);
++    for (int col = 0; col < 2; ++col) {
++      const int x = columnPair * 2 + col;
++      const bool white = (frame[y * 50 + x / 8] & (0x80 >> (x % 8))) != 0;
++      if (white) packed |= uint8_t(1u << (7 - row * 2 - col));
++    }
++  }
++  return packed;
++}
++}  // namespace freeink
+diff --git a/libs/hardware/BoardConfig/include/BoardConfig.h b/libs/hardware/BoardConfig/include/BoardConfig.h
+index fb10c17..ea87ec5 100644
+--- a/libs/hardware/BoardConfig/include/BoardConfig.h
++++ b/libs/hardware/BoardConfig/include/BoardConfig.h
+@@ -30,6 +30,10 @@
+ // coherence check below errors if none (or an incompatible mix) is selected.
+ 
+ // Normalize device flags to 0/1.
++#ifndef FREEINK_DEVICE_RLCD42
++#define FREEINK_DEVICE_RLCD42 0
++#endif
++
+ #ifndef FREEINK_DEVICE_X4
+ #define FREEINK_DEVICE_X4 0
+ #endif
+@@ -94,7 +98,7 @@
+       FREEINK_DEVICE_MURPHY || FREEINK_DEVICE_DELINK || FREEINK_DEVICE_LILYGO || FREEINK_DEVICE_M5PAPER ||               \
+       FREEINK_DEVICE_STICKY || FREEINK_DEVICE_PAPERMONO || FREEINK_DEVICE_PAPERS3 || FREEINK_DEVICE_MURPHY_M4 ||         \
+       FREEINK_DEVICE_EEGO_A4 || FREEINK_DEVICE_ONEPAGE || FREEINK_DEVICE_WS397 || FREEINK_DEVICE_METALIO_EINK4 || \
+-      FREEINK_DEVICE_PICCO)
++      FREEINK_DEVICE_PICCO || FREEINK_DEVICE_RLCD42)
+ #error \
+     "FreeInk: no device selected. Pass at least one -DFREEINK_DEVICE_<NAME> (X4, X3, X4PRO, X4CLASSIC, M5, MURPHY, DELINK, LILYGO, M5PAPER, STICKY, PAPERMONO, PAPERS3, MURPHY_M4, EEGO_A4, ONEPAGE, WS397, METALIO_EINK4, PICCO) in your build env — see platformio.sample.ini."
+ #endif
+@@ -108,7 +112,7 @@
+   (FREEINK_DEVICE_M5 || FREEINK_DEVICE_MURPHY || FREEINK_DEVICE_DELINK || FREEINK_DEVICE_LILYGO ||        \
+    FREEINK_DEVICE_STICKY || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_X4CLASSIC || FREEINK_DEVICE_PAPERMONO ||  \
+    FREEINK_DEVICE_PAPERS3 || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_EEGO_A4 || FREEINK_DEVICE_WS397 || FREEINK_DEVICE_METALIO_EINK4 || \
+-   FREEINK_DEVICE_PICCO)
++   FREEINK_DEVICE_PICCO || FREEINK_DEVICE_RLCD42)
+ #define FREEINK_MCU_ESP32 (FREEINK_DEVICE_M5PAPER)
+ #if (FREEINK_MCU_C3 + FREEINK_MCU_C61 + FREEINK_MCU_S3 + FREEINK_MCU_ESP32) != 1
+ #error \
+@@ -205,11 +209,13 @@
+ #endif
+ 
+ // --- 4) Derive default capabilities (override with -DFREEINK_CAP_*=0/1) -------
++#define FREEINK_DRIVER_ST7305 FREEINK_DEVICE_RLCD42
++
+ #ifndef FREEINK_CAP_TOUCH
+ #define FREEINK_CAP_TOUCH                                                                               \
+   (FREEINK_DEVICE_MURPHY || FREEINK_DEVICE_LILYGO || FREEINK_DEVICE_M5PAPER || FREEINK_DEVICE_STICKY || \
+    FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_PAPERMONO || FREEINK_DEVICE_PAPERS3 || FREEINK_DEVICE_MURPHY_M4 || \
+-   FREEINK_DEVICE_EEGO_A4 || FREEINK_DEVICE_METALIO_EINK4 || FREEINK_DEVICE_PICCO)
++   FREEINK_DEVICE_EEGO_A4 || FREEINK_DEVICE_METALIO_EINK4 || FREEINK_DEVICE_PICCO || FREEINK_DEVICE_RLCD42)
+ #endif
+ #ifndef FREEINK_CAP_FRONTLIGHT
+ // EEGO A4's frontlight is an I2C LED driver (viaI2cLed), not LEDC PWM — the
+@@ -350,7 +356,7 @@
+ // (The prebuilt Arduino-ESP32 libs disable BSS-in-PSRAM, so this is a runtime
+ // heap allocation, not EXT_RAM_BSS_ATTR.)
+ #ifndef FREEINK_FB_PSRAM
+-#define FREEINK_FB_PSRAM (FREEINK_DEVICE_M5PAPER || FREEINK_DEVICE_PAPERMONO)
++#define FREEINK_FB_PSRAM (FREEINK_DEVICE_M5PAPER || FREEINK_DEVICE_PAPERMONO || FREEINK_DEVICE_RLCD42)
+ #endif
+ 
+ // SD transport. de-link (4-bit) and X4 Pro (1-bit) are wired for SDMMC; SdFat
+@@ -361,7 +367,7 @@
+ #ifndef FREEINK_SD_SDMMC
+ #define FREEINK_SD_SDMMC                                                                            \
+   (FREEINK_DEVICE_DELINK || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_X4CLASSIC || FREEINK_DEVICE_PAPERMONO || \
+-   FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_WS397 || FREEINK_DEVICE_METALIO_EINK4 || FREEINK_DEVICE_PICCO)
++   FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_WS397 || FREEINK_DEVICE_METALIO_EINK4 || FREEINK_DEVICE_PICCO || FREEINK_DEVICE_RLCD42)
+ #endif
+ 
+ // Serial log transport hint for consumer firmware. Boards can share the same MCU
+@@ -401,6 +407,7 @@ inline auto& serialTransport() { return Serial; }
+ // board (identical pinout, different panel/size): both profiles compile into the
+ // C3 binary and one is chosen at runtime (setDisplayX3() -> selectDevice).
+ enum class Board : uint8_t {
++  Rlcd42,
+   XteinkX4,
+   XteinkX3,
+   XteinkX3Uc8279,  // newer X3 production run: same board/glass, UC8279d controller
+@@ -449,6 +456,7 @@ enum class InputStyle : uint8_t {
+ // Paper Mono uses SSD1677 silicon with a board-specific driver and host-authored
+ // waveforms, so its profile reports the actual controller here.
+ enum class DisplayController : uint8_t {
++  ST7305 = 9,
+   SSD1677 = 0,
+   UC8253 = 2,
+   ED2208 = 3,
+@@ -2003,29 +2011,45 @@ constexpr uint32_t cmax(uint32_t a, uint32_t b) { return a > b ? a : b; }
+ constexpr uint32_t panelBytes(const BoardProfile& p) {
+   return static_cast<uint32_t>(p.displayWidth / 8) * p.displayHeight;
+ }
++constexpr BoardProfile RLCD42 = {
++    Board::Rlcd42, "rlcd42", InputStyle::DigitalButtons,
++    DisplayController::ST7305, 400, 300,
++    {11, 12, 40, 5, 41, PIN_UNASSIGNED, PIN_UNASSIGNED}, 4000000,
++    {PIN_UNASSIGNED, PIN_UNASSIGNED, PIN_UNASSIGNED, PIN_UNASSIGNED, PIN_UNASSIGNED, false, 0},
++    {PIN_UNASSIGNED, 18, PIN_UNASSIGNED, PIN_UNASSIGNED, PIN_UNASSIGNED, 0, 1, false},
++    4, PIN_UNASSIGNED, 3.0f, PIN_UNASSIGNED,
++    {TouchController::Cst816s, 15, 7, 17, 2, 0x15, 0, 399, 0, 299, false, 0, false, false},
++    NO_FRONTLIGHT, NO_AUDIO, NO_LEDS, NO_FLIP,
++    {38, 21, 39, PIN_UNASSIGNED, PIN_UNASSIGNED, PIN_UNASSIGNED, 1},
++    NO_GAUGE, NO_MIC, NO_SENSORS, 1.0f, {}, 0, {0, 0, 28, 0}};  // bottom inset: case lip overlap
++
+ constexpr uint32_t MAX_FRAMEBUFFER_BYTES = cmax(
+-    cmax(cmax(FREEINK_DEVICE_X4 ? panelBytes(XTEINK_X4) : 0u, FREEINK_DEVICE_X3 ? panelBytes(XTEINK_X3) : 0u),
+-         cmax(FREEINK_DEVICE_M5 ? panelBytes(M5STACK_PAPER_COLOR) : 0u,
+-              FREEINK_DEVICE_MURPHY ? panelBytes(MURPHY_M3) : 0u)),
+-    cmax(cmax(cmax(FREEINK_DEVICE_DELINK ? panelBytes(DE_LINK) : 0u,
+-                   FREEINK_DEVICE_LILYGO ? panelBytes(LILYGO_T5S3) : 0u),
+-              cmax(FREEINK_DEVICE_M5PAPER ? panelBytes(M5PAPER_V11) : 0u,
+-                   cmax(FREEINK_DEVICE_X4PRO ? panelBytes(XTEINK_X4_PRO) : 0u,
+-                        FREEINK_DEVICE_X4CLASSIC ? panelBytes(XTEINK_X4_CLASSIC) : 0u))),
+-         cmax(cmax(FREEINK_DEVICE_STICKY ? panelBytes(STICKY) : 0u,
+-                   FREEINK_DEVICE_PAPERMONO ? panelBytes(PAPER_MONO) : 0u),
+-              cmax(cmax(FREEINK_DEVICE_PAPERS3 ? panelBytes(M5PAPER_S3) : 0u,
+-                        FREEINK_DEVICE_MURPHY_M4 ? panelBytes(MURPHY_M4) : 0u),
+-                   cmax(cmax(FREEINK_DEVICE_EEGO_A4 ? panelBytes(EEGO_A4) : 0u,
+-                             FREEINK_DEVICE_ONEPAGE ? panelBytes(ONEPAGE) : 0u),
+-                        cmax(FREEINK_DEVICE_WS397 ? panelBytes(WS_EPAPER_397) : 0u,
+-                             cmax(FREEINK_DEVICE_METALIO_EINK4 ? panelBytes(METALIO_EINK4) : 0u,
+-                                  FREEINK_DEVICE_PICCO ? panelBytes(PICCO) : 0u)))))));
++    FREEINK_DEVICE_RLCD42 ? panelBytes(RLCD42) : 0u,
++    cmax(
++        cmax(cmax(FREEINK_DEVICE_X4 ? panelBytes(XTEINK_X4) : 0u, FREEINK_DEVICE_X3 ? panelBytes(XTEINK_X3) : 0u),
++             cmax(FREEINK_DEVICE_M5 ? panelBytes(M5STACK_PAPER_COLOR) : 0u,
++                  FREEINK_DEVICE_MURPHY ? panelBytes(MURPHY_M3) : 0u)),
++        cmax(cmax(cmax(FREEINK_DEVICE_DELINK ? panelBytes(DE_LINK) : 0u,
++                       FREEINK_DEVICE_LILYGO ? panelBytes(LILYGO_T5S3) : 0u),
++                  cmax(FREEINK_DEVICE_M5PAPER ? panelBytes(M5PAPER_V11) : 0u,
++                       cmax(FREEINK_DEVICE_X4PRO ? panelBytes(XTEINK_X4_PRO) : 0u,
++                            FREEINK_DEVICE_X4CLASSIC ? panelBytes(XTEINK_X4_CLASSIC) : 0u))),
++             cmax(cmax(FREEINK_DEVICE_STICKY ? panelBytes(STICKY) : 0u,
++                       FREEINK_DEVICE_PAPERMONO ? panelBytes(PAPER_MONO) : 0u),
++                  cmax(cmax(FREEINK_DEVICE_PAPERS3 ? panelBytes(M5PAPER_S3) : 0u,
++                            FREEINK_DEVICE_MURPHY_M4 ? panelBytes(MURPHY_M4) : 0u),
++                       cmax(cmax(FREEINK_DEVICE_EEGO_A4 ? panelBytes(EEGO_A4) : 0u,
++                                 FREEINK_DEVICE_ONEPAGE ? panelBytes(ONEPAGE) : 0u),
++                            cmax(FREEINK_DEVICE_WS397 ? panelBytes(WS_EPAPER_397) : 0u,
++                                 cmax(FREEINK_DEVICE_METALIO_EINK4 ? panelBytes(METALIO_EINK4) : 0u,
++                                      FREEINK_DEVICE_PICCO ? panelBytes(PICCO) : 0u))))))));
+ 
+ // Compile-time default device — the profile ACTIVE starts as. With a single
+ // device in the build this is the only device; with several same-MCU devices it
+ // is the boot default until the consumer calls selectDevice().
+-#if FREEINK_DEVICE_METALIO_EINK4
++#if FREEINK_DEVICE_RLCD42
++constexpr BoardProfile DEFAULT_DEVICE = RLCD42;
++#elif FREEINK_DEVICE_METALIO_EINK4
+ constexpr BoardProfile DEFAULT_DEVICE = METALIO_EINK4;
+ #elif FREEINK_DEVICE_WS397
+ constexpr BoardProfile DEFAULT_DEVICE = WS_EPAPER_397;
+@@ -2077,6 +2101,11 @@ inline void releaseSdRail();   // defined below; used by holdPowerRails()
+ // leaves ACTIVE unchanged) if `which` was not included via -DFREEINK_DEVICE_*.
+ inline bool selectDevice(Board which) {
+   switch (which) {
++#if FREEINK_DEVICE_RLCD42
++    case Board::Rlcd42:
++      ACTIVE = RLCD42;
++      return true;
++#endif
+ #if FREEINK_DEVICE_X4
+     case Board::XteinkX4:
+       ACTIVE = XTEINK_X4;
+@@ -2229,6 +2258,13 @@ inline bool latchConflictsWithBus(int8_t pin) {
+ // the user releases the power button. Releasing the pins (driving them LOW)
+ // is a software power-off. No-op on boards without a latch.
+ inline void holdPowerRails() {
++#if FREEINK_DEVICE_RLCD42
++  // The unused amplifier enable must not float while reading or sleeping.
++  gpio_hold_dis(static_cast<gpio_num_t>(46));
++  digitalWrite(46, LOW);
++  pinMode(46, OUTPUT);
++  gpio_hold_en(static_cast<gpio_num_t>(46));
++#endif
+ #if FREEINK_DEVICE_METALIO_EINK4
+   if (isMetalioEInk4()) freeink::metalio::ensureBooted();
+ #endif
+diff --git a/libs/hardware/InputManager/include/InputManager.h b/libs/hardware/InputManager/include/InputManager.h
+index d56f0f4..e40a4de 100644
+--- a/libs/hardware/InputManager/include/InputManager.h
++++ b/libs/hardware/InputManager/include/InputManager.h
+@@ -479,8 +479,13 @@ class InputManager {
+   // driver).
+   static constexpr unsigned long TOUCH_IRQ_PULSE_MS = 120;   // release hold-over after last valid read
+   static constexpr unsigned long TOUCH_SAMPLE_DELAY_MS = 8;  // I2C poll cadence
++#if FREEINK_DEVICE_RLCD42
++  static constexpr int TOUCH_TAP_SLOP_PX = 12;
++  static constexpr int TOUCH_SWIPE_MIN_PX = 28;
++#else
+   static constexpr int TOUCH_TAP_SLOP_PX = 28;
+   static constexpr int TOUCH_SWIPE_MIN_PX = 60;
++#endif
+   static constexpr int TOUCH_TAP_RELEASE_SLOP_PX = TOUCH_SWIPE_MIN_PX - 1;
+   static constexpr unsigned long TOUCH_SWIPE_MAX_MS = 700;
+   static constexpr unsigned long TOUCH_MULTI_SWIPE_MAX_MS = 2000;
+diff --git a/libs/hardware/InputManager/src/InputManager.cpp b/libs/hardware/InputManager/src/InputManager.cpp
+index 9bf244e..d824df9 100644
+--- a/libs/hardware/InputManager/src/InputManager.cpp
++++ b/libs/hardware/InputManager/src/InputManager.cpp
+@@ -1508,16 +1508,21 @@ bool InputManager::ft5x06WriteReg(const uint8_t reg, const uint8_t value) {
+ }
+ 
+ bool InputManager::ft5x06ReadReg(const uint8_t reg, uint8_t* buf, const uint8_t len) {
++#if FREEINK_DEVICE_RLCD42
++  auto& wire = Wire1;
++#else
++  auto& wire = Wire;
++#endif
+   const uint8_t addr = BoardConfig::ACTIVE.touch.i2cAddress;
+-  Wire.beginTransmission(addr);
+-  Wire.write(reg);
+-  if (Wire.endTransmission(false) != 0) return false;
+-  const uint8_t got = Wire.requestFrom(addr, len, static_cast<uint8_t>(true));
++  wire.beginTransmission(addr);
++  wire.write(reg);
++  if (wire.endTransmission(false) != 0) return false;
++  const uint8_t got = wire.requestFrom(addr, len, static_cast<uint8_t>(true));
+   if (got != len) {
+-    while (Wire.available()) Wire.read();
++    while (wire.available()) wire.read();
+     return false;
+   }
+-  for (uint8_t i = 0; i < len; ++i) buf[i] = Wire.read();
++  for (uint8_t i = 0; i < len; ++i) buf[i] = wire.read();
+   return true;
+ }
+ 
+@@ -1590,7 +1595,9 @@ void InputManager::beginFt5x06() {
+ // interrupt/sleep behavior and off-screen cover keys need their own poll path.
+ namespace {
+ volatile bool cstInterrupt = false;
++#if !FREEINK_DEVICE_RLCD42
+ void IRAM_ATTR cstTouchInterrupt() { cstInterrupt = true; }
++#endif
+ }
+ 
+ void InputManager::beginCst816s() {
+@@ -1599,14 +1606,28 @@ void InputManager::beginCst816s() {
+   if (BoardConfig::isMetalioEInk4() && !freeink::metalio::ensureBooted()) return;
+ #endif
+   if (t.sda < 0 || t.scl < 0 || !t.i2cAddress) return;
++#if FREEINK_DEVICE_RLCD42
++  pinMode(t.reset, OUTPUT);
++  digitalWrite(t.reset, LOW);
++  delay(20);
++  digitalWrite(t.reset, HIGH);
++  delay(80);
++  if (!Wire1.begin(t.sda, t.scl, 100000)) return;
++  Wire1.setTimeOut(20);
++#else
+   if (!Wire.begin(t.sda, t.scl, 400000)) return;
+   Wire.setTimeOut(10);
++#endif
+   cstVirtualButtons = 0;
+   cstInterrupt = false;
++#if !FREEINK_DEVICE_RLCD42
+   if (t.irq >= 0) {
+     pinMode(t.irq, INPUT_PULLUP);
+     attachInterrupt(digitalPinToInterrupt(t.irq), cstTouchInterrupt, FALLING);
+   }
++#else
++  pinMode(t.irq, INPUT_PULLUP);
++#endif
+   touchDataEnabled = true;
+ }
+ 
+@@ -1615,7 +1636,12 @@ void InputManager::pollCst816s(const unsigned long now) {
+   if (now < touchReadAt) return;
+   touchReadAt = now + TOUCH_SAMPLE_DELAY_MS;
+   const bool active = touchPressed || touchHomeKeyDown || cstVirtualButtons;
++#if FREEINK_DEVICE_RLCD42
++  // This panel supplies valid polled points even while INT remains high.
++  const bool fresh = true;
++#else
+   const bool fresh = cstInterrupt || t.irq < 0 || digitalRead(t.irq) == LOW;
++#endif
+   if (!active && !fresh) return;
+   cstInterrupt = false;
+   const auto release = [&]() {
+@@ -1638,11 +1664,21 @@ void InputManager::pollCst816s(const unsigned long now) {
+   uint8_t data[5] = {};
+   if (!ft5x06ReadReg(0x02, data, sizeof(data))) {
+     // The device goes silent again after release; don't latch a key/contact.
+-    if (active && now - cstLastSample >= 100) release();
++    if (active && now - cstLastSample >= 100) {
++#if FREEINK_DEVICE_RLCD42
++      suppressTouchContact();  // An I2C failure must not become a page-turn tap.
++#endif
++      release();
++    }
+     return;
+   }
+   if (fresh) cstLastSample = now;
+-  if (!(data[0] & 0x0F) || (data[1] >> 6) == 1) {
++#if FREEINK_DEVICE_RLCD42
++  const bool released = !(data[0] & 0x0F);
++#else
++  const bool released = !(data[0] & 0x0F) || (data[1] >> 6) == 1;
++#endif
++  if (released) {
+     release();
+     return;
+   }
+@@ -1673,7 +1709,13 @@ void InputManager::pollCst816s(const unsigned long now) {
+   if (touchHomeKeyDown || cstVirtualButtons) release();
+   const uint16_t x = t.swapXY ? rawY : rawX;
+   const uint16_t y = t.swapXY ? rawX : rawY;
+-  if (x < t.rawMinX || x > t.rawMaxX || y < t.rawMinY || y > t.rawMaxY) { release(); return; }
++  if (x < t.rawMinX || x > t.rawMaxX || y < t.rawMinY || y > t.rawMaxY) {
++#if FREEINK_DEVICE_RLCD42
++    suppressTouchContact();
++#endif
++    release();
++    return;
++  }
+   touchPoint = {true, mapTouchAxis(x, t.rawMinX, t.rawMaxX, t.rawMaxX - t.rawMinX),
+                      mapTouchAxis(y, t.rawMinY, t.rawMaxY, t.rawMaxY - t.rawMinY), now};
+   if (t.flipX) touchPoint.x = t.rawMaxX - t.rawMinX - touchPoint.x;
+diff --git a/libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp b/libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp
+index b8874a6..79d6b06 100644
+--- a/libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp
++++ b/libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp
+@@ -49,7 +49,11 @@ bool SdmmcBlockDevice::begin(const BoardConfig::SdmmcPins& pins) {
+   // only, and the data clock at 40 MHz. The read timeouts we chased earlier were a
+   // mount-sequencing problem, not a clock-margin one — see the retry loop below.
+   sdmmc_host_t host = SDMMC_HOST_DEFAULT();
++#if FREEINK_DEVICE_RLCD42
++  host.max_freq_khz = 5000;
++#else
+   host.max_freq_khz = SDMMC_FREQ_DEFAULT;  // 40 MHz
++#endif
+ 
+   // Slot pin map. The ESP32-S3 routes SDMMC through the GPIO matrix, so the data
+   // and clock/command lines are assignable (unlike the classic ESP32's fixed slot).

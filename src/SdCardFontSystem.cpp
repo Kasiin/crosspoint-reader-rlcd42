@@ -34,6 +34,19 @@ int computeTtfFontId(const char* familyName, uint8_t pointSize) {
 
 }  // namespace
 
+#if FREEINK_DEVICE_RLCD42
+namespace {
+// unloadAll()/unloadTtf() clear the whole fallback map, which also drops the
+// built-in CJK pixel fallback registered in setupDisplayAndFonts — restore it
+// after any unload that is not followed by a successful SD font load.
+void restoreBuiltinCjkFallbacks(GfxRenderer& renderer) {
+  renderer.setFallbackFont(SMALL_FONT_ID, FUSION_PIXEL_12_FONT_ID);
+  renderer.setFallbackFont(UI_10_FONT_ID, FUSION_PIXEL_12_FONT_ID);
+  renderer.setFallbackFont(UI_12_FONT_ID, FUSION_PIXEL_12_FONT_ID);
+}
+}  // namespace
+#endif
+
 // Out-of-line ctor/dtor: TtfEpdFont is complete here, so unique_ptr<TtfEpdFont>
 // can be constructed/destroyed. (Declared in the header where it is only
 // forward-declared.)
@@ -63,7 +76,7 @@ struct UiFontSize {
 constexpr UiFontSize kUiFontSizes[] = {
     {SMALL_FONT_ID, 8},
     {UI_10_FONT_ID, 10},
-    {UI_12_FONT_ID, 12},
+    {UI_12_FONT_ID, FREEINK_DEVICE_RLCD42 ? 10 : 12},
 };
 
 }  // namespace
@@ -143,6 +156,9 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) {
     if (!currentFamily.empty()) {
       manager_.unloadAll(renderer);
     }
+#if FREEINK_DEVICE_RLCD42
+    restoreBuiltinCjkFallbacks(renderer);
+#endif
     // Back on a built-in family, which exists only at BUILTIN_READER_POINT_SIZES:
     // a size inherited from an SD family has to come back into that set.
     snapFontPointSizeTo(snapToNearestPointSize(BUILTIN_READER_POINT_SIZES, std::size(BUILTIN_READER_POINT_SIZES),
@@ -160,6 +176,9 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) {
       LOG_DBG("SDFS", "SD font family disappeared: %s (clearing)", wantedFamily);
       manager_.unloadAll(renderer);
       SETTINGS.clearSdFontFamily();
+#if FREEINK_DEVICE_RLCD42
+      restoreBuiltinCjkFallbacks(renderer);
+#endif
       return;
     }
     const auto* selected = family->findNearestSize(SETTINGS.fontPointSize);
@@ -185,10 +204,16 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) {
     } else {
       LOG_ERR("SDFS", "Failed to load SD font family: %s (clearing)", wantedFamily);
       SETTINGS.clearSdFontFamily();
+#if FREEINK_DEVICE_RLCD42
+      restoreBuiltinCjkFallbacks(renderer);
+#endif
     }
   } else {
     LOG_DBG("SDFS", "SD font family not found: %s (clearing)", wantedFamily);
     SETTINGS.clearSdFontFamily();
+#if FREEINK_DEVICE_RLCD42
+    restoreBuiltinCjkFallbacks(renderer);
+#endif
   }
 }
 
@@ -481,6 +506,9 @@ void SdCardFontSystem::loadTtfFamily(const SdCardFontFamilyInfo& family, GfxRend
   if (family.files.empty()) {
     LOG_ERR("SDFS", "Vector family %s has no file", family.name.c_str());
     SETTINGS.clearSdFontFamily();
+#if FREEINK_DEVICE_RLCD42
+    restoreBuiltinCjkFallbacks(renderer);
+#endif
     return;
   }
 
@@ -498,6 +526,9 @@ void SdCardFontSystem::loadTtfFamily(const SdCardFontFamilyInfo& family, GfxRend
     // next ensureLoaded() retries; this session falls back to the built-in.
     LOG_ERR("SDFS", "Vector family %s: regular file failed to open (keeping selection)", family.name.c_str());
     freeTtfSources();
+#if FREEINK_DEVICE_RLCD42
+    restoreBuiltinCjkFallbacks(renderer);
+#endif
     return;
   }
 
@@ -507,6 +538,9 @@ void SdCardFontSystem::loadTtfFamily(const SdCardFontFamilyInfo& family, GfxRend
     // next ensureLoaded() can retry once heap pressure passes.
     LOG_ERR("SDFS", "OOM: TtfEpdFont for %s", family.name.c_str());
     freeTtfSources();
+#if FREEINK_DEVICE_RLCD42
+    restoreBuiltinCjkFallbacks(renderer);
+#endif
     return;
   }
   addTtfSources(*ttf_);
@@ -519,6 +553,9 @@ void SdCardFontSystem::loadTtfFamily(const SdCardFontFamilyInfo& family, GfxRend
     LOG_ERR("SDFS", "FreeInkFont could not parse %s (keeping selection)", family.name.c_str());
     ttf_.reset();
     freeTtfSources();
+#if FREEINK_DEVICE_RLCD42
+    restoreBuiltinCjkFallbacks(renderer);
+#endif
     return;
   }
   // Seed the regular face's glyph cache; other styles + glyphs fault on demand.

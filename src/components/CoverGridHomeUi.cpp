@@ -298,10 +298,17 @@ void CoverGridHomeUi::drawTabs(UiScreen& screen, fui::Rect rect) {
 }
 
 bool CoverGridHomeUi::paintFramedCover(fui::DrawTarget& target, fui::Rect rect, size_t index) {
+  // The 2px drop shadow reads as smudge on a 1-bit panel; skip it there.
+#if FREEINK_DEVICE_RLCD42
+  constexpr int16_t SHADOW_OFFSET = 0;
+#else
   constexpr int16_t SHADOW_OFFSET = 2;
+#endif
   const auto ink = fui::Paint::solid(fui::Color::Black);
-  target.fill(fui::Rect{rect.right(), static_cast<int16_t>(rect.y + SHADOW_OFFSET), SHADOW_OFFSET, rect.height}, ink);
-  target.fill(fui::Rect{static_cast<int16_t>(rect.x + SHADOW_OFFSET), rect.bottom(), rect.width, SHADOW_OFFSET}, ink);
+  if (SHADOW_OFFSET > 0) {
+    target.fill(fui::Rect{rect.right(), static_cast<int16_t>(rect.y + SHADOW_OFFSET), SHADOW_OFFSET, rect.height}, ink);
+    target.fill(fui::Rect{static_cast<int16_t>(rect.x + SHADOW_OFFSET), rect.bottom(), rect.width, SHADOW_OFFSET}, ink);
+  }
   // The false spine draws inside the cover paint (HomeCoverCache), glued to
   // the art's left edge, so it stays aligned whatever each cover's margin is.
   const bool drawn = index < coverPaths.size() && coverCache.paint(rect, index, coverPaths[index]);

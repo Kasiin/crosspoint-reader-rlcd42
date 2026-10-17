@@ -21,6 +21,13 @@ class UITheme {
   static UITheme& getInstance() { return instance; }
 
   const ThemeMetrics& getMetrics() const;
+  static const ThemeMetrics& boardMetrics(const ThemeMetrics& original) {
+#if FREEINK_DEVICE_RLCD42
+    return getInstance().getMetrics();
+#else
+    return original;
+#endif
+  }
   const BaseTheme& getTheme() const { return currentTheme ? *currentTheme : fallbackTheme; }
   // The drawable content area: full screen minus the board's viewable insets
   // (bezel / rounded-corner clearance from BoardConfig::ACTIVE.viewableInsets,

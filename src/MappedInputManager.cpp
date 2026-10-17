@@ -382,6 +382,16 @@ bool MappedInputManager::wasPressed(const Button button) const {
 bool MappedInputManager::wasReleased(const Button button) const {
   if (button == Button::Confirm && homeAction == HomeButtonAction::Confirm) return true;
   if (button == Button::Back && wasBackGesture()) return true;
+#if FREEINK_DEVICE_RLCD42
+  // Three-button board: a short PWR release doubles as Back; longer holds are
+  // left for the hold-to-sleep path in main. Long-press Back is unreachable
+  // (isPressed(Back) stays false), so nothing double-fires. Only when the
+  // short-press action setting is Ignore — any other action owns the release.
+  if (button == Button::Back && SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::IGNORE &&
+      gpio.wasReleased(HalGPIO::BTN_POWER) && gpio.getPowerButtonHeldTime() <= 1000) {
+    return true;
+  }
+#endif
 #if FREEINK_CAP_TOUCH
   if (button == Button::Confirm && wasPowerConfirmClick()) return true;
 #endif

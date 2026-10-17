@@ -1519,13 +1519,17 @@ void EpubReaderActivity::renderBook() {
 
   const uint8_t statusBarHeight = UITheme::getInstance().getStatusBarHeight();
 
+  // Reserve the status bar lane on the edge it is drawn on.
+  int& statusBarMargin = SETTINGS.statusBarSpec().position == CrossPointSettings::STATUS_BAR_TOP
+                             ? orientedMarginTop
+                             : orientedMarginBottom;
   if (automaticPageTurnActive &&
       (statusBarHeight == 0 || statusBarHeight == UITheme::getInstance().getProgressBarHeight())) {
-    orientedMarginBottom +=
+    statusBarMargin +=
         std::max(SETTINGS.screenMargin,
                  static_cast<uint8_t>(statusBarHeight + UITheme::getInstance().getMetrics().statusBarVerticalMargin));
   } else {
-    orientedMarginBottom += std::max(SETTINGS.screenMargin, statusBarHeight);
+    statusBarMargin += std::max(SETTINGS.screenMargin, statusBarHeight);
   }
 
   const uint16_t viewportWidth = renderer.getScreenWidth() - orientedMarginLeft - orientedMarginRight;
@@ -2298,7 +2302,8 @@ void EpubReaderActivity::renderStatusBar() const {
   }
 
   GUI.drawStatusBar(renderer, bookProgress, currentPage, pageCount, title, 0, textYOffset, true, currentPageBookmarked,
-                    section ? section->isBuilding() : false);
+                    section ? section->isBuilding() : false,
+                    SETTINGS.statusBarSpec().position == CrossPointSettings::STATUS_BAR_TOP);
 }
 
 // ---------------------------------------------------------------------------
@@ -2340,7 +2345,10 @@ std::string EpubReaderActivity::textRowValue(int row) const {
   switch (row) {
     case 0:
       if (SETTINGS.sdFontFamilyName[0] != '\0') return SETTINGS.sdFontFamilyName;
-      return I18N.get(kFamily[SETTINGS.fontFamily % CrossPointSettings::FONT_FAMILY_COUNT]);
+#if FREEINK_DEVICE_RLCD42
+      if (SETTINGS.fontFamily == CrossPointSettings::FUSION_PIXEL) return "缝合像素 12px";
+#endif
+      return I18N.get(kFamily[SETTINGS.fontFamily % std::size(kFamily)]);
     case 1:
       return std::to_string(SETTINGS.fontPointSize) + " pt";
     case 2:

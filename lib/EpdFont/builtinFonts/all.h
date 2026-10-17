@@ -1,5 +1,8 @@
 #pragma once
 
+// Fusion Pixel is only referenced by RLCD42 code in main.cpp; on other boards
+// the unreferenced static arrays are stripped by --gc-sections.
+#include <builtinFonts/fusion_pixel_12_regular.h>
 #include <builtinFonts/notoserif_12_bold.h>
 #include <builtinFonts/notoserif_12_bolditalic.h>
 #include <builtinFonts/notoserif_12_italic.h>

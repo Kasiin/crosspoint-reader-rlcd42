@@ -26,6 +26,7 @@ enum MenuItem {
   ITEM_TITLE,
   ITEM_BATTERY,
   ITEM_XTC_STATUS_BAR,
+  ITEM_POSITION,
   ITEM_CLOCK,  // RTC boards only
   ITEM_COUNT
 };
@@ -43,6 +44,7 @@ const StrId menuNames[FULL_MENU_ITEMS] = {
     StrId::STR_TITLE,
     StrId::STR_BATTERY,
     StrId::STR_XTC_STATUS_BAR,
+    StrId::STR_POSITION,
     StrId::STR_CLOCK,
 };
 
@@ -58,6 +60,9 @@ const StrId titleNames[TITLE_ITEMS] = {StrId::STR_BOOK, StrId::STR_CHAPTER, StrI
 
 constexpr int XTC_STATUS_BAR_ITEMS = 3;
 const StrId xtcStatusBarNames[XTC_STATUS_BAR_ITEMS] = {StrId::STR_HIDE, StrId::STR_BOTTOM, StrId::STR_TOP};
+
+constexpr int POSITION_ITEMS = CrossPointSettings::STATUS_BAR_POSITION_COUNT;
+const StrId positionNames[POSITION_ITEMS] = {StrId::STR_BOTTOM, StrId::STR_TOP};
 
 constexpr int STATUS_BAR_CLOCK_ITEMS = CrossPointSettings::STATUS_BAR_CLOCK_MODE_COUNT;
 const StrId statusBarClockNames[STATUS_BAR_CLOCK_ITEMS] = {StrId::STR_HIDE, StrId::STR_DIR_RIGHT, StrId::STR_DIR_LEFT};
@@ -88,6 +93,10 @@ void StatusBarSettingsActivity::onEnter() {
 
   if (SETTINGS.xtcStatusBarMode >= XTC_STATUS_BAR_ITEMS) {
     SETTINGS.xtcStatusBarMode = CrossPointSettings::XTC_STATUS_BAR_MODE::XTC_STATUS_BAR_HIDE;
+  }
+
+  if (SETTINGS.statusBarPosition >= POSITION_ITEMS) {
+    SETTINGS.statusBarPosition = CrossPointSettings::STATUS_BAR_POSITION::STATUS_BAR_BOTTOM;
   }
 
   if (SETTINGS.statusBarClock >= STATUS_BAR_CLOCK_ITEMS) {
@@ -154,6 +163,13 @@ void StatusBarSettingsActivity::handleSelection() {
                          SETTINGS.saveToFile();
                        });
       return;
+    case ITEM_POSITION:
+      optionPopup.show(StrId::STR_POSITION, positionNames, POSITION_ITEMS, SETTINGS.statusBarPosition,
+                       [this](int idx) {
+                         SETTINGS.statusBarPosition = idx;
+                         SETTINGS.saveToFile();
+                       });
+      return;
     case ITEM_CLOCK:
       SETTINGS.statusBarClock = (SETTINGS.statusBarClock + 1) % STATUS_BAR_CLOCK_ITEMS;
       break;
@@ -173,6 +189,8 @@ std::string StatusBarSettingsActivity::rowValueText(const int index) {
       return I18N.get(titleNames[SETTINGS.statusBarTitle]);
     case ITEM_XTC_STATUS_BAR:
       return I18N.get(xtcStatusBarNames[SETTINGS.xtcStatusBarMode]);
+    case ITEM_POSITION:
+      return I18N.get(positionNames[SETTINGS.statusBarPosition]);
     case ITEM_CLOCK:
       return I18N.get(statusBarClockNames[SETTINGS.statusBarClock]);
     default:
@@ -189,8 +207,11 @@ void StatusBarSettingsActivity::buildScreen(UiScreen& screen) {
   const int statusBarHeight = UITheme::getInstance().getStatusBarHeight();
   const auto previewFooter =
       static_cast<int16_t>(statusBarHeight + verticalPreviewTextPadding + metrics.verticalSpacing);
-  screen.setContentMarginFromScreen(fui::Insets{static_cast<int16_t>(metrics.topPadding + metrics.headerHeight), 0,
-                                                static_cast<int16_t>(metrics.buttonHintsHeight + previewFooter), 0});
+  const bool previewTop = SETTINGS.statusBarPosition == CrossPointSettings::STATUS_BAR_TOP;
+  // The preview is pinned against the selected edge, so reserve the band there.
+  screen.setContentMarginFromScreen(
+      fui::Insets{static_cast<int16_t>(metrics.topPadding + metrics.headerHeight + (previewTop ? previewFooter : 0)),
+                  0, static_cast<int16_t>(metrics.buttonHintsHeight + (previewTop ? 0 : previewFooter)), 0});
   screen.spacer(static_cast<int16_t>(metrics.verticalSpacing));
 
   // rowItems_'s labels/actionValue were set once in onEnter(); only the live
@@ -241,13 +262,22 @@ void StatusBarSettingsActivity::render(RenderLock&&) {
     title = tr(STR_EXAMPLE_CHAPTER);
   }
 
-  // Anchor the preview as a footer directly above the button hints.
-  GUI.drawStatusBar(renderer, 75, 8, 32, title, metrics.buttonHintsHeight, 0, false);
-
-  renderer.drawCenteredText(UI_10_FONT_ID,
-                            renderer.getScreenHeight() - UITheme::getInstance().getStatusBarHeight() -
-                                metrics.buttonHintsHeight - verticalPreviewTextPadding,
-                            tr(STR_PREVIEW));
+  // Anchor the preview against the selected edge: footer directly above the
+  // button hints at the bottom, or just under the header at the top.
+  const bool previewTop = SETTINGS.statusBarPosition == CrossPointSettings::STATUS_BAR_TOP;
+  const auto statusBarHeight = UITheme::getInstance().getStatusBarHeight();
+  if (previewTop) {
+    const int previewTopPad = metrics.topPadding + metrics.headerHeight;
+    GUI.drawStatusBar(renderer, 75, 8, 32, title, previewTopPad + verticalPreviewTextPadding, 0, false, false, false,
+                      true);
+    renderer.drawCenteredText(UI_10_FONT_ID, previewTopPad + 4, tr(STR_PREVIEW));
+  } else {
+    GUI.drawStatusBar(renderer, 75, 8, 32, title, metrics.buttonHintsHeight, 0, false);
+    renderer.drawCenteredText(UI_10_FONT_ID,
+                              renderer.getScreenHeight() - statusBarHeight - metrics.buttonHintsHeight -
+                                  verticalPreviewTextPadding,
+                              tr(STR_PREVIEW));
+  }
 
   renderer.displayBuffer();
 }

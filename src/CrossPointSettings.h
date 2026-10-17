@@ -1,7 +1,9 @@
 #pragma once
 
 #include <ArduinoJson.h>
+#include <BoardConfig.h>
 #include <Epub/ReaderRenderSpec.h>
+#include <I18nKeys.h>
 #include <PersistableStore.h>
 
 #include <cstdint>
@@ -47,6 +49,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     STATUS_BAR_PROGRESS_BAR_THICKNESS_COUNT
   };
   enum STATUS_BAR_TITLE { BOOK_TITLE = 0, CHAPTER_TITLE = 1, HIDE_TITLE = 2, STATUS_BAR_TITLE_COUNT };
+  enum STATUS_BAR_POSITION { STATUS_BAR_BOTTOM = 0, STATUS_BAR_TOP = 1, STATUS_BAR_POSITION_COUNT };
   enum XTC_STATUS_BAR_MODE {
     XTC_STATUS_BAR_HIDE = 0,
     XTC_STATUS_BAR_BOTTOM = 1,
@@ -106,14 +109,24 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   };
 
   // Font family options (built-in fonts only; SD card fonts use sdFontFamilyName)
-  enum FONT_FAMILY { NOTOSERIF = 0, NOTOSANS = 1, FONT_FAMILY_COUNT };
+  enum FONT_FAMILY {
+    NOTOSERIF = 0,
+    NOTOSANS = 1,
+#if FREEINK_DEVICE_RLCD42
+    // Value 2 collides with LEGACY_OPENDYSLEXIC below; safe on RLCD42 because
+    // the port never shipped a build where 2 meant OpenDyslexic, and fromJson
+    // skips that migration on this board.
+    FUSION_PIXEL,
+#endif
+    FONT_FAMILY_COUNT
+  };
   static constexpr uint8_t LEGACY_OPENDYSLEXIC = 2;
   static constexpr uint8_t BUILTIN_FONT_COUNT = FONT_FAMILY_COUNT;
   // Reader font size is a point size, not an enum slot — see fontPointSize.
   // Legacy 1.4-and-earlier files stored a 0..3 SMALL/MEDIUM/LARGE/EXTRA_LARGE
   // slot; fromJson() folds that range up (see LEGACY_FONT_SIZE_MAX).
   static constexpr uint8_t LEGACY_FONT_SIZE_MAX = 3;
-  static constexpr uint8_t DEFAULT_FONT_POINT_SIZE = 14;
+  static constexpr uint8_t DEFAULT_FONT_POINT_SIZE = FREEINK_DEVICE_RLCD42 ? 12 : 14;
   enum LINE_COMPRESSION { TIGHT = 0, NORMAL = 1, WIDE = 2, EXTRA_WIDE = 3, LINE_COMPRESSION_COUNT };
   enum PARAGRAPH_ALIGNMENT {
     JUSTIFIED = 0,
@@ -242,6 +255,13 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t xtcStatusBarMode = XTC_STATUS_BAR_HIDE;
   // Clock display in status bar (any board whose RTC probe succeeds)
   uint8_t statusBarClock = STATUS_BAR_CLOCK_HIDE;
+  // Status bar edge (STATUS_BAR_POSITION). RLCD42 defaults to the top: the
+  // bottom case lip shades the panel's lowest rows.
+#if FREEINK_DEVICE_RLCD42
+  uint8_t statusBarPosition = STATUS_BAR_TOP;
+#else
+  uint8_t statusBarPosition = STATUS_BAR_BOTTOM;
+#endif
   // LEGACY, kept for migration only: quarter-hour UTC offset biased by 48
   // (48 = UTC+0). Superseded by clockTimezone; read once by
   // timezones::activeIndex() when clockTimezone is unset.
@@ -291,7 +311,12 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t frontButtonLeft = FRONT_HW_LEFT;
   uint8_t frontButtonRight = FRONT_HW_RIGHT;
   // Reader font settings
+#if FREEINK_DEVICE_RLCD42
+  // CJK-capable pixel font is the default on the 400x300 1-bit RLCD42 panel.
+  uint8_t fontFamily = FUSION_PIXEL;
+#else
   uint8_t fontFamily = NOTOSERIF;
+#endif
   // Point size of the reader font. Only sizes the active family actually ships
   // are selectable; SdCardFontSystem::ensureLoaded() snaps this to the nearest
   // available size (and persists the snap) whenever the family changes.
@@ -357,8 +382,14 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Master reader-touch toggle on boards with a touch controller.
   uint8_t touchReaderControls = TOUCH_READER_ON;
   // Which gestures turn the page in each direction (PAGE_TURN_GESTURE).
+#if FREEINK_DEVICE_RLCD42
+  // Default to tap zones on this board: its previous firmware paged by tap.
+  uint8_t pageTurnGesture = TAP_AND_SWIPE;
+  uint8_t previousPageGesture = TAP_AND_SWIPE;
+#else
   uint8_t pageTurnGesture = SWIPE_ONLY;
   uint8_t previousPageGesture = SWIPE_ONLY;
+#endif
   // Reader menu open gesture (SHOW_READER_MENU: off / center tap / bottom-edge
   // up-swipe). Only surfaced on home-key boards, where Home is the capacitive
   // key and the bottom edge is free; elsewhere it stays at the Tap default.
@@ -371,8 +402,12 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Restore the saved on/off state after a normal boot or wake. Brightness and
   // warmth are always remembered even when this is disabled.
   uint8_t frontlightRestoreOnWake = 1;
-  // Language setting (Language enum index, default 0 = EN)
+  // Language setting (Language enum index, default EN; ZH on RLCD42)
+#if FREEINK_DEVICE_RLCD42
+  uint8_t language = static_cast<uint8_t>(Language::ZH);
+#else
   uint8_t language = 0;
+#endif
   // Keyboard layouts the user can reach, using keyboard_layouts::ALL table bits.
   // 0 means "not configured", resolved to the UI language's layout plus English.
   // Any other value is an explicit choice and is used as-is: the language of the
@@ -423,6 +458,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     uint8_t progressBarMode = HIDE_PROGRESS;  // STATUS_BAR_PROGRESS_BAR
     uint8_t progressBarHeightPx = 0;          // (thickness+1)*2; 0 when the bar is hidden
     uint8_t xtcMode = XTC_STATUS_BAR_HIDE;    // XTC_STATUS_BAR_MODE
+    uint8_t position = STATUS_BAR_BOTTOM;     // STATUS_BAR_POSITION
 
     bool showsProgressBar() const { return progressBarMode != HIDE_PROGRESS; }
     bool showsTitle() const { return titleMode != HIDE_TITLE; }

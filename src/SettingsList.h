@@ -29,6 +29,14 @@ inline SettingInfo buildFontFamilySetting(const SdCardFontRegistry* registry) {
   // Runtime string labels for SD card fonts
   std::vector<std::string> enumStringValues;
 
+#if FREEINK_DEVICE_RLCD42
+  // The Fusion Pixel entry has no StrId (proper noun, not translated), so the
+  // whole list renders from strings on this board.
+  constexpr bool kNeedsStringLabels = true;
+#else
+  constexpr bool kNeedsStringLabels = false;
+#endif
+
   // Reserve: first CrossPointSettings::BUILTIN_FONT_COUNT entries use StrId, rest use strings
   if (registry) {
     const auto& families = registry->getFamilies();
@@ -45,9 +53,12 @@ inline SettingInfo buildFontFamilySetting(const SdCardFontRegistry* registry) {
   // The render code checks enumStringValues first, then enumValues. So we build enumStringValues
   // with all options when SD fonts are present.
   std::vector<std::string> allStringValues;
-  if (sdFontCount > 0) {
+  if (sdFontCount > 0 || kNeedsStringLabels) {
     allStringValues.push_back(I18N.get(StrId::STR_NOTO_SERIF));
     allStringValues.push_back(I18N.get(StrId::STR_NOTO_SANS));
+#if FREEINK_DEVICE_RLCD42
+    allStringValues.push_back("缝合像素 12px");
+#endif
     allStringValues.insert(allStringValues.end(), enumStringValues.begin(), enumStringValues.end());
   }
 
@@ -576,6 +587,8 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         SettingInfo::Enum(StrId::STR_XTC_STATUS_BAR, &CrossPointSettings::xtcStatusBarMode,
                           {StrId::STR_HIDE, StrId::STR_BOTTOM, StrId::STR_TOP}, "xtcStatusBarMode",
                           StrId::STR_CUSTOMISE_STATUS_BAR),
+        SettingInfo::Enum(StrId::STR_POSITION, &CrossPointSettings::statusBarPosition,
+                          {StrId::STR_BOTTOM, StrId::STR_TOP}, "statusBarPosition", StrId::STR_CUSTOMISE_STATUS_BAR),
         // Clock entries (persistence + web settings; the device UI is
         // ClockSettingsActivity under System settings).
         SettingInfo::Enum(StrId::STR_CLOCK, &CrossPointSettings::statusBarClock, std::move(statusBarClockValues),

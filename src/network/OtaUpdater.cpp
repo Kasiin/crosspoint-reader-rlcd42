@@ -19,7 +19,11 @@
 #include "FirmwareFlasher.h"
 
 namespace {
+#if FREEINK_DEVICE_RLCD42
+constexpr char latestReleaseUrl[] = "https://api.github.com/repos/Kasiin/crosspoint-reader/releases/latest";
+#else
 constexpr char latestReleaseUrl[] = "https://api.github.com/repos/crosspoint-reader/crosspoint-reader/releases/latest";
+#endif
 }  // namespace
 
 OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {

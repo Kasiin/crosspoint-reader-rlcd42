@@ -136,6 +136,13 @@ EpdFont ui12RegularFont(&ubuntu_12_regular);
 EpdFont ui12BoldFont(&ubuntu_12_bold);
 EpdFontFamily ui12FontFamily(&ui12RegularFont, &ui12BoldFont);
 
+#if FREEINK_DEVICE_RLCD42
+// RLCD42-only CJK pixel font (Fusion Pixel 12px, GB2312 subset). Regular-only
+// family; also the UI fallback for scripts the built-in UI fonts lack.
+EpdFont fusionPixel12RegularFont(&fusion_pixel_12_regular);
+EpdFontFamily fusionPixelFamily(&fusionPixel12RegularFont);
+#endif
+
 // Definitions for SilentRestart.h. RTC_NOINIT survives ESP.restart() but not power loss.
 RTC_NOINIT_ATTR uint32_t silentRebootMagic;
 RTC_NOINIT_ATTR uint32_t silentRebootTarget;
@@ -418,8 +425,21 @@ void setupDisplayAndFonts(bool seamless = false) {
   renderer.insertFont(NOTOSANS_18_FONT_ID, notosans18FontFamily);
 #endif  // OMIT_FONTS
   renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);
+#if FREEINK_DEVICE_RLCD42
+  renderer.insertFont(UI_12_FONT_ID, ui10FontFamily);
+#else
   renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
+#endif
   renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
+#if FREEINK_DEVICE_RLCD42
+  renderer.insertFont(FUSION_PIXEL_12_FONT_ID, fusionPixelFamily);
+  // Whole-string fallback (resolveTextFontId): any UI string containing a
+  // codepoint the built-in UI fonts lack renders in the pixel font instead,
+  // so Chinese UI text no longer drops glyphs.
+  renderer.setFallbackFont(SMALL_FONT_ID, FUSION_PIXEL_12_FONT_ID);
+  renderer.setFallbackFont(UI_10_FONT_ID, FUSION_PIXEL_12_FONT_ID);
+  renderer.setFallbackFont(UI_12_FONT_ID, FUSION_PIXEL_12_FONT_ID);
+#endif
 
   // Discover and load SD card fonts
   sdFontSystem.begin(renderer);
@@ -839,8 +859,15 @@ void loop() {
                                         SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP &&
                                         gpio.getPowerButtonHeldTime() <= X4PRO_POWER_CLICK_MAX_HOLD_MS;
 
+  // RLCD42 repurposes a short PWR press as Back, so sleep needs a deliberate
+  // long hold instead of the configurable short-press window.
+#if FREEINK_DEVICE_RLCD42
+  constexpr unsigned long powerSleepHoldMs = 2500;
+#else
+  const unsigned long powerSleepHoldMs = SETTINGS.getPowerButtonDuration();
+#endif
   if (!x4ProAwaitingClickWindow && powerReleasedSinceWake && millis() >= allowSleepAt &&
-      gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getPowerButtonHeldTime() > SETTINGS.getPowerButtonDuration()) {
+      gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getPowerButtonHeldTime() > powerSleepHoldMs) {
     // If the screenshot combination is potentially being pressed, don't sleep
     if (gpio.isPressed(HalGPIO::BTN_DOWN)) {
       return;

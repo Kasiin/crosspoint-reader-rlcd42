@@ -128,6 +128,19 @@ struct ThemeMetrics {
   int controlRadius;
   int sheetRadius;
   int capsuleRadius;
+
+  // Square header button (back / action boxes) side, in pixels.
+  int headerButtonSize = 48;
+  // Home recents title wrap limits: the single big cover (Classic/Lyra/
+  // RoundedRaff) versus the three-cover tiles (Lyra3Covers).
+  int homeRecentTitleMaxLines = 3;
+  int homeCoverTitleMaxLines = 3;
+  // RoundedRaff derives its menu row height from the font by default; boards
+  // with a compact layout take menuRowHeight/menuSpacing from here instead.
+  bool menuRowHeightFromMetrics = false;
+  // Dithered gray selection fills (Lyra pills/cards, tab washes). 1-bit panels
+  // render dither as a checkerboard, so they set this false for solid fills.
+  bool ditheredSelection = true;
 };
 
 enum UIIcon {
@@ -285,7 +298,7 @@ class BaseTheme {
   static void drawStatusBar(GfxRenderer& renderer, const float bookProgress, const int currentPage, const int pageCount,
                             std::string title, const int paddingBottom = 0, const int textYOffset = 0,
                             const bool fillMargin = true, const bool isPageBookmarked = false,
-                            const bool pageCountEstimated = false);
+                            const bool pageCountEstimated = false, const bool atTop = false);
   static void drawHelpText(const GfxRenderer& renderer, Rect rect, const char* label);
   virtual void drawTextField(const GfxRenderer& renderer, Rect rect, const int textWidth, bool cursorMode = false,
                              int contentStartX = 0, int contentWidth = 0) const;
