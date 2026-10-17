@@ -1,3 +1,18 @@
+# CrossPoint Reader — RLCD 4.2" Port
+
+> **来源 / Origin**: This repository is a downstream port of
+> **[CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader)**
+> (MIT License, © CrossPoint Reader organization). All credit for the reader
+> firmware goes to the upstream project and its contributors; this repo adds a
+> board port and Chinese-language support on top. See `LICENSE` and
+> `docs/rlcd42-port.md`.
+
+This branch targets a custom 4.2" 400x300 reflective-LCD reader board
+(ESP32-S3 + ST7305 panel + CST816 touch), and adds a built-in Fusion Pixel
+Chinese font, a full 简体中文 UI, and GBK plain-text book support.
+
+---
+
 # CrossPoint Reader
 
 [![Fund contributors](https://img.shields.io/badge/%F0%9F%91%91_Fund_contributors-royalty.dev-BB953A?style=for-the-badge&labelColor=1a1a1a)](https://app.royalty.dev/crosspoint-reader/crosspoint-reader)
